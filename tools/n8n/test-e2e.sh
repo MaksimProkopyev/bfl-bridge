@@ -140,13 +140,34 @@ except Exception as exc:
     sys.exit(0)
 run_data = data.get("data", {}).get("data", {}).get("resultData", {}).get("runData", {})
 counts = {"to_a": 0, "to_b": 0}
-leadgen_a = run_data.get("leadgen_a_http", [])
-if leadgen_a:
-    counts["to_a"] = sum(len(item.get("json", {}).get("body", [])) if isinstance(item.get("json", {}).get("body"), list) else 1 for item in leadgen_a)
-leadgen_b = run_data.get("leadgen_b_http", [])
-if leadgen_b:
-    counts["to_b"] = sum(len(item.get("json", {}).get("body", [])) if isinstance(item.get("json", {}).get("body"), list) else 1 for item in leadgen_b)
-print(json.dumps({"ok": True, "counts": counts}))
+errors = []
+
+
+def accumulate(node_key, count_key):
+    node_runs = run_data.get(node_key, []) or []
+    total = 0
+    for entry in node_runs:
+        payload = entry.get("json", {}) if isinstance(entry, dict) else {}
+        status = payload.get("statusCode")
+        if status is None:
+            errors.append(f"{node_key}:missing_status")
+        elif not (200 <= int(status) < 300):
+            errors.append(f"{node_key}:status_{status}")
+        body = payload.get("body")
+        if isinstance(body, list):
+            total += len(body)
+        elif body is not None:
+            total += 1
+    counts[count_key] = total
+
+
+accumulate("leadgen_a_http", "to_a")
+accumulate("leadgen_b_http", "to_b")
+
+if errors:
+    print(json.dumps({"ok": False, "counts": counts, "errors": errors}))
+else:
+    print(json.dumps({"ok": True, "counts": counts}))
 PY <<<'${status_json}')"
 
 echo "test:e2e: ${result}"
