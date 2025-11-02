@@ -15,12 +15,10 @@ function getEnv(name, { required = false } = {}) {
   return value ? value.trim() : '';
 }
 
-const host = getEnv('N8N_HOST', { required: true }).replace(/\/$/, '');
+const host = getEnv('N8N_HOST', { required: true }).replace(//$/, '');
 const workflowId = getEnv('WORKFLOW_ID', { required: true });
 const apiKey = getEnv('N8N_API_KEY', { required: true });
-const webhookBase = getEnv('WEBHOOK_BASE_URL', { required: true }).replace(/\/$/, '');
-const leadgenAAuth = getEnv('LEADGEN_A_AUTH');
-const leadgenBAuth = getEnv('LEADGEN_B_AUTH');
+const webhookBase = getEnv('WEBHOOK_BASE_URL', { required: true }).replace(//$/, '');
 
 const apiBase = `${host}/rest`;
 
@@ -102,7 +100,7 @@ function buildIfNode(name, key, position) {
       conditions: {
         boolean: [
           {
-            value1: `={{(($json["actions"]?.${key}) || []).length > 0}}`,
+            value1: `={{ Array.isArray($json["actions"]?.${key}) && $json["actions"].${key}.length > 0 }}`,
             value2: true,
           },
         ],
@@ -111,13 +109,14 @@ function buildIfNode(name, key, position) {
   };
 }
 
-function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, position }) {
-  const headers = [
-    { name: 'Content-Type', value: 'application/json' },
-  ];
-  if (authValue) {
-    headers.push({ name: 'Authorization', value: authValue });
-  }
+function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, headerEnvName, position }) {
+  const headerParams = {
+    parameters: [
+      { name: 'Content-Type', value: 'application/json' },
+      { name: 'Authorization', value: `={{ $env.${headerEnvName} }}` },
+    ],
+  };
+
   return {
     id: crypto.randomUUID(),
     name,
@@ -125,11 +124,12 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
     typeVersion: 4,
     position,
     parameters: {
-      url: `${webhookBase}${pathSuffix}`,
+      url: `={{ $env.WEBHOOK_BASE_URL + '${pathSuffix}' }}`,
       method: 'POST',
       jsonParameters: true,
-      bodyParametersJson: `={{({ "${payloadKey}": $json["actions"]?.${bodyKey} || [] })}}`,
-      headerParameters: headers,
+      bodyParametersJson: `={{ ({ "${payloadKey}": $json["actions"]?.${bodyKey} || [] }) }}`,
+      sendHeaders: true,
+      headerParameters: headerParams,
       options: {
         retryOnFail: true,
         maxRetries: 3,
@@ -137,6 +137,14 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
       },
     },
   };
+}
+
+function ensureReturnJson(returnNode) {
+  const bodyExpr = `={{ { ok: true, counts: { to_a: Array.isArray($json.actions?.to_a) ? $json.actions.to_a.length : 0, to_b: Array.isArray($json.actions?.to_b) ? $json.actions.to_b.length : 0 } } }}`;
+  returnNode.parameters = returnNode.parameters || {};
+  returnNode.parameters.respondWith = 'json';
+  returnNode.parameters.responseBody = bodyExpr;
+  returnNode.parameters.options = { ...(returnNode.parameters.options || {}), responseCode: 200 };
 }
 
 (async () => {
@@ -158,6 +166,9 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
       throw new Error('Return node not found');
     }
 
+    // Force Return to emit compact JSON with counts and 200 code
+    ensureReturnJson(returnNode);
+
     const baseX = Array.isArray(extractNode.position) ? extractNode.position[0] : 0;
     const baseY = Array.isArray(extractNode.position) ? extractNode.position[1] : 0;
 
@@ -169,7 +180,7 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
       pathSuffix: '/webhook/bfl/leadgen/query-a',
       bodyKey: 'to_a',
       payloadKey: 'new_urls',
-      authValue: leadgenAAuth,
+      headerEnvName: 'LEADGEN_A_AUTH',
       position: [baseX + 600, baseY - 150],
     });
 
@@ -178,7 +189,7 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
       pathSuffix: '/webhook/bfl/leadgen/intake-b',
       bodyKey: 'to_b',
       payloadKey: 'candidates',
-      authValue: leadgenBAuth,
+      headerEnvName: 'LEADGEN_B_AUTH',
       position: [baseX + 600, baseY + 150],
     });
 
