@@ -26,8 +26,16 @@ if (!apiKey && !n8nJwt && !n8nAdminJwt) {
   throw new Error('Missing auth: set N8N_API_KEY or N8N_JWT / N8N_ADMIN_JWT');
 }
 getEnv('WEBHOOK_BASE_URL', { required: true });
-const leadgenAAuth = process.env.LEADGEN_A_AUTH ? '{{$env.LEADGEN_A_AUTH}}' : '';
-const leadgenBAuth = process.env.LEADGEN_B_AUTH ? '{{$env.LEADGEN_B_AUTH}}' : '';
+const leadgenAHeader = {
+  name: 'Authorization',
+  value: '{{$env.LEADGEN_A_AUTH}}',
+  disabled: "={{ !$env.LEADGEN_A_AUTH }}",
+};
+const leadgenBHeader = {
+  name: 'Authorization',
+  value: '{{$env.LEADGEN_B_AUTH}}',
+  disabled: "={{ !$env.LEADGEN_B_AUTH }}",
+};
 
 const apiBase = `${host}/rest`;
 const execFileAsync = promisify(execFile);
@@ -141,6 +149,15 @@ function pruneRemovedConnections(connections, validNodes) {
   });
 }
 
+function coerceNodeName(nodes, candidates, targetName) {
+  const names = Array.isArray(candidates) ? candidates : [candidates];
+  const node = nodes.find((n) => names.includes(n.name));
+  if (node) {
+    node.name = targetName;
+  }
+  return node;
+}
+
 function buildIfNode(name, key, position) {
   return {
     id: crypto.randomUUID(),
@@ -161,12 +178,12 @@ function buildIfNode(name, key, position) {
   };
 }
 
-function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, position }) {
+function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authHeader, position }) {
   const headers = [
     { name: 'Content-Type', value: 'application/json' },
   ];
-  if (authValue) {
-    headers.push({ name: 'Authorization', value: authValue });
+  if (authHeader) {
+    headers.push({ ...authHeader });
   }
   const baseUrlExpr = "($env.WEBHOOK_BASE_URL || '').replace(/\\\/$/, '')";
   const urlExpr = `${baseUrlExpr} + '${pathSuffix}'`;
@@ -215,25 +232,45 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
     const baseX = Array.isArray(extractNode.position) ? extractNode.position[0] : 0;
     const baseY = Array.isArray(extractNode.position) ? extractNode.position[1] : 0;
 
-    const hasToANode = buildIfNode('has_to_a', 'to_a', [baseX + 300, baseY - 150]);
-    const hasToBNode = buildIfNode('has_to_b', 'to_b', [baseX + 300, baseY + 150]);
+    const existingHasToA = coerceNodeName(nodes, ['has_to_a', 'Has to A', 'Has to a'], 'has_to_a');
+    const existingHasToB = coerceNodeName(nodes, ['has_to_b', 'Has to B', 'Has to b'], 'has_to_b');
+
+    const hasToAPosition = Array.isArray(existingHasToA?.position)
+      ? existingHasToA.position
+      : [baseX + 300, baseY - 150];
+    const hasToBPosition = Array.isArray(existingHasToB?.position)
+      ? existingHasToB.position
+      : [baseX + 300, baseY + 150];
+
+    const hasToANode = buildIfNode('has_to_a', 'to_a', hasToAPosition);
+    const hasToBNode = buildIfNode('has_to_b', 'to_b', hasToBPosition);
+
+    const existingHttpA = coerceNodeName(nodes, ['HTTP A', 'leadgen_a_http', 'HTTP A Request'], 'HTTP A');
+    const existingHttpB = coerceNodeName(nodes, ['HTTP B', 'leadgen_b_http', 'HTTP B Request'], 'HTTP B');
+
+    const httpAPosition = Array.isArray(existingHttpA?.position)
+      ? existingHttpA.position
+      : [baseX + 600, baseY - 150];
+    const httpBPosition = Array.isArray(existingHttpB?.position)
+      ? existingHttpB.position
+      : [baseX + 600, baseY + 150];
 
     const httpANode = buildHttpNode({
-      name: 'leadgen_a_http',
+      name: 'HTTP A',
       pathSuffix: '/webhook/bfl/leadgen/query-a',
       bodyKey: 'to_a',
       payloadKey: 'new_urls',
-      authValue: leadgenAAuth,
-      position: [baseX + 600, baseY - 150],
+      authHeader: leadgenAHeader,
+      position: httpAPosition,
     });
 
     const httpBNode = buildHttpNode({
-      name: 'leadgen_b_http',
+      name: 'HTTP B',
       pathSuffix: '/webhook/bfl/leadgen/intake-b',
       bodyKey: 'to_b',
       payloadKey: 'candidates',
-      authValue: leadgenBAuth,
-      position: [baseX + 600, baseY + 150],
+      authHeader: leadgenBHeader,
+      position: httpBPosition,
     });
 
     const upsertedHasToA = upsertNode(nodes, hasToANode);
