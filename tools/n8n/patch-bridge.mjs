@@ -40,9 +40,69 @@ const leadgenBHeader = {
 const apiBase = `${host}/rest`;
 const execFileAsync = promisify(execFile);
 
+function isTruthy(value) {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+function parseCurlExtraArgs(raw) {
+  if (!raw) {
+    return [];
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Invalid N8N_CURL_EXTRA_ARGS JSON: ${error.message}`);
+  }
+  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+    throw new Error('N8N_CURL_EXTRA_ARGS must be a JSON array of strings');
+  }
+  return parsed;
+}
+
+function buildCurlEnv() {
+  const env = { ...process.env };
+  const disableProxy = isTruthy(getEnv('N8N_CURL_DISABLE_PROXY'));
+  const proxyUrl = getEnv('N8N_CURL_PROXY');
+  const noProxy = getEnv('N8N_CURL_NO_PROXY');
+
+  const proxyEnvKeys = [
+    'http_proxy',
+    'https_proxy',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'ALL_PROXY',
+    'all_proxy',
+  ];
+
+  if (disableProxy) {
+    proxyEnvKeys.forEach((key) => {
+      delete env[key];
+    });
+    delete env.NO_PROXY;
+    delete env.no_proxy;
+  } else if (proxyUrl) {
+    proxyEnvKeys.forEach((key) => {
+      env[key] = proxyUrl;
+    });
+  }
+
+  if (noProxy) {
+    env.NO_PROXY = noProxy;
+    env.no_proxy = noProxy;
+  }
+
+  return env;
+}
+
+const curlExtraArgs = parseCurlExtraArgs(getEnv('N8N_CURL_EXTRA_ARGS'));
+const curlEnv = buildCurlEnv();
+
 async function curlJsonRequest(pathname, { method = 'GET', body } = {}) {
   const url = `${apiBase}${pathname}`;
-  const args = ['-sS', '-o', '-', '-w', '\n%{http_code}', '-X', method];
+  const args = ['-sS', '-o', '-', '-w', '\n%{http_code}', '-X', method, ...curlExtraArgs];
   const headers = {
     'Content-Type': 'application/json',
   };
@@ -64,7 +124,7 @@ async function curlJsonRequest(pathname, { method = 'GET', body } = {}) {
   args.push(url);
   let stdout;
   try {
-    ({ stdout } = await execFileAsync('curl', args));
+    ({ stdout } = await execFileAsync('curl', args, { env: curlEnv }));
   } catch (error) {
     const message = error?.stderr || error?.message || 'curl execution failed';
     throw new Error(`curl request failed: ${message}`);
