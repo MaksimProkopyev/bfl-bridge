@@ -2,6 +2,8 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import dotenv from 'dotenv';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const root = process.cwd();
 const envPath = path.join(root, '.env.local');
@@ -28,8 +30,11 @@ const leadgenAAuth = process.env.LEADGEN_A_AUTH ? '{{$env.LEADGEN_A_AUTH}}' : ''
 const leadgenBAuth = process.env.LEADGEN_B_AUTH ? '{{$env.LEADGEN_B_AUTH}}' : '';
 
 const apiBase = `${host}/rest`;
+const execFileAsync = promisify(execFile);
 
-async function apiRequest(pathname, { method = 'GET', body } = {}) {
+async function curlJsonRequest(pathname, { method = 'GET', body } = {}) {
+  const url = `${apiBase}${pathname}`;
+  const args = ['-sS', '-o', '-', '-w', '\n%{http_code}', '-X', method];
   const headers = {
     'Content-Type': 'application/json',
   };
@@ -40,20 +45,52 @@ async function apiRequest(pathname, { method = 'GET', body } = {}) {
   } else if (apiKey) {
     headers['X-N8N-API-KEY'] = apiKey;
   }
-
-  const response = await fetch(`${apiBase}${pathname}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+  Object.entries(headers).forEach(([key, value]) => {
+    if (value && value.trim() !== '') {
+      args.push('-H', `${key}: ${value}`);
+    }
   });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`n8n ${method} ${pathname} failed: ${response.status} ${response.statusText} ${text}`);
+  if (body) {
+    args.push('-d', JSON.stringify(body));
   }
-  if (response.status === 204) {
+  args.push(url);
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync('curl', args));
+  } catch (error) {
+    const message = error?.stderr || error?.message || 'curl execution failed';
+    throw new Error(`curl request failed: ${message}`);
+  }
+  const trimmed = stdout.trimEnd();
+  const splitIndex = trimmed.lastIndexOf('\n');
+  if (splitIndex === -1) {
+    throw new Error('Invalid curl response (missing status code)');
+  }
+  const bodyText = trimmed.slice(0, splitIndex);
+  const statusText = trimmed.slice(splitIndex + 1);
+  const statusCode = Number.parseInt(statusText, 10);
+  if (Number.isNaN(statusCode)) {
+    throw new Error(`Invalid status code from curl: ${statusText}`);
+  }
+  if (statusCode === 204) {
     return null;
   }
-  return response.json();
+  if (statusCode < 200 || statusCode >= 300) {
+    const preview = bodyText.length > 2000 ? `${bodyText.slice(0, 2000)}…` : bodyText;
+    throw new Error(`n8n ${method} ${pathname} failed: ${statusCode} ${preview}`);
+  }
+  if (!bodyText) {
+    return null;
+  }
+  try {
+    return JSON.parse(bodyText);
+  } catch (error) {
+    throw new Error(`Failed to parse JSON response: ${error.message}`);
+  }
+}
+
+async function apiRequest(pathname, { method = 'GET', body } = {}) {
+  return curlJsonRequest(pathname, { method, body });
 }
 
 function upsertNode(nodes, node) {
