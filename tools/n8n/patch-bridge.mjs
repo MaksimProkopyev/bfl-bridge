@@ -131,6 +131,9 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
   if (authValue) {
     headers.push({ name: 'Authorization', value: authValue });
   }
+  const baseUrlExpr = "($env.WEBHOOK_BASE_URL || '').replace(/\\\/$/, '')";
+  const urlExpr = `${baseUrlExpr} + '${pathSuffix}'`;
+  const bodyExpr = `{{ { ${payloadKey}: $json('actions.${bodyKey}') } }}`;
   return {
     id: crypto.randomUUID(),
     name,
@@ -138,14 +141,15 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
     typeVersion: 4,
     position,
     parameters: {
-      url: `{{ ($env.WEBHOOK_BASE_URL || '').replace(/\\\/$/, '') + '${pathSuffix}' }}`,
+      url: `{{ ${urlExpr} }}`,
       method: 'POST',
       jsonParameters: true,
-      bodyParametersJson: `{{ { ${payloadKey}: $json('actions.${bodyKey}') } }}`,
+      bodyParametersJson: bodyExpr,
       headerParameters: headers,
       options: {
         retryOnFail: true,
         maxRetries: 3,
+        retry: 3,
         timeout: 15000,
       },
     },
@@ -213,10 +217,10 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
         "{{ { ok:true, counts:{ to_a: Array.isArray($json.actions?.to_a)?$json.actions.to_a.length:0, to_b: Array.isArray($json.actions?.to_b)?$json.actions.to_b.length:0 } } }}";
       node.parameters = node.parameters || {};
       node.parameters.responseBodyExpression = bodyExpr;
-      node.parameters.options = {
-        ...(node.parameters.options || {}),
-        responseCode: 200,
-      };
+      node.parameters.responseCode = 200;
+      if (node.name !== 'Return (Respond to Webhook)') {
+        node.name = 'Return (Respond to Webhook)';
+      }
     }
 
     ensureReturnJson(returnNode);
