@@ -13,5 +13,6 @@
   "type": "module",
   "dependencies": {
     "dotenv": "file:vendor/dotenv"
-  }
+  },
+  "private": true
 }
