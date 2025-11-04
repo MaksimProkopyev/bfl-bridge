@@ -23,9 +23,9 @@ const n8nAdminJwt = getEnv('N8N_ADMIN_JWT');
 if (!apiKey && !n8nJwt && !n8nAdminJwt) {
   throw new Error('Missing auth: set N8N_API_KEY or N8N_JWT / N8N_ADMIN_JWT');
 }
-const webhookBase = getEnv('WEBHOOK_BASE_URL', { required: true }).replace(/\/$/, '');
-const leadgenAAuth = getEnv('LEADGEN_A_AUTH');
-const leadgenBAuth = getEnv('LEADGEN_B_AUTH');
+getEnv('WEBHOOK_BASE_URL', { required: true });
+const leadgenAAuth = process.env.LEADGEN_A_AUTH ? '{{$env.LEADGEN_A_AUTH}}' : '';
+const leadgenBAuth = process.env.LEADGEN_B_AUTH ? '{{$env.LEADGEN_B_AUTH}}' : '';
 
 const apiBase = `${host}/rest`;
 
@@ -115,7 +115,7 @@ function buildIfNode(name, key, position) {
       conditions: {
         boolean: [
           {
-            value1: `={{(($json["actions"]?.${key}) || []).length > 0}}`,
+            value1: `{{ Array.isArray($json.actions?.${key}) && $json.actions.${key}.length > 0 }}`,
             value2: true,
           },
         ],
@@ -131,6 +131,9 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
   if (authValue) {
     headers.push({ name: 'Authorization', value: authValue });
   }
+  const baseUrlExpr = "($env.WEBHOOK_BASE_URL || '').replace(/\\\/$/, '')";
+  const urlExpr = `${baseUrlExpr} + '${pathSuffix}'`;
+  const bodyExpr = `{{ { ${payloadKey}: $json('actions.${bodyKey}') } }}`;
   return {
     id: crypto.randomUUID(),
     name,
@@ -138,14 +141,15 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
     typeVersion: 4,
     position,
     parameters: {
-      url: `${webhookBase}${pathSuffix}`,
+      url: `{{ ${urlExpr} }}`,
       method: 'POST',
       jsonParameters: true,
-      bodyParametersJson: `={{({ "${payloadKey}": $json["actions"]?.${bodyKey} || [] })}}`,
+      bodyParametersJson: bodyExpr,
       headerParameters: headers,
       options: {
         retryOnFail: true,
         maxRetries: 3,
+        retry: 3,
         timeout: 15000,
       },
     },
@@ -210,14 +214,13 @@ function buildHttpNode({ name, pathSuffix, bodyKey, payloadKey, authValue, posit
 
     function ensureReturnJson(node) {
       const bodyExpr =
-        '={{ { ok: true, counts: { to_a: Array.isArray($json.actions?.to_a) ? $json.actions.to_a.length : 0, to_b: Array.isArray($json.actions?.to_b) ? $json.actions.to_b.length : 0 } } }}';
+        "{{ { ok:true, counts:{ to_a: Array.isArray($json.actions?.to_a)?$json.actions.to_a.length:0, to_b: Array.isArray($json.actions?.to_b)?$json.actions.to_b.length:0 } } }}";
       node.parameters = node.parameters || {};
-      node.parameters.respondWith = 'json';
-      node.parameters.responseBody = bodyExpr;
-      node.parameters.options = {
-        ...(node.parameters.options || {}),
-        responseCode: 200,
-      };
+      node.parameters.responseBodyExpression = bodyExpr;
+      node.parameters.responseCode = 200;
+      if (node.name !== 'Return (Respond to Webhook)') {
+        node.name = 'Return (Respond to Webhook)';
+      }
     }
 
     ensureReturnJson(returnNode);
