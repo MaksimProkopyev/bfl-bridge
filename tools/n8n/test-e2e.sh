@@ -111,6 +111,7 @@ fi
 wait_attempts=20
 sleep_interval=3
 status_json=""
+finished="false"
 for ((i=0; i<wait_attempts; i++)); do
   status_json="$(curl -sS "${AUTH_ARGS[@]}" "${N8N_BASE}/rest/executions/${execution_id}")"
   finished="$(python - <<'PY'
@@ -128,6 +129,16 @@ PY <<<'${status_json}')"
   fi
   sleep "${sleep_interval}"
 done
+
+if [[ -z "${status_json}" ]]; then
+  echo "test:e2e: {\"ok\":false,\"error\":\"execution status unavailable\"}"
+  exit 1
+fi
+
+if [[ "${finished}" != "true" ]]; then
+  echo "test:e2e: {\"ok\":false,\"error\":\"execution did not finish in time\"}"
+  exit 1
+fi
 
 result="$(python - <<'PY'
 import json
