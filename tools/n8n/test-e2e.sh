@@ -4,6 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env.local"
 
+is_truthy() {
+  local value="${1:-}"
+  case "${value,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 if [[ -f "${ENV_FILE}" ]]; then
   while IFS='=' read -r key value; do
     if [[ -z "${key}" ]] || [[ "${key}" == \#* ]]; then
@@ -27,6 +35,66 @@ AUTH_ARGS=()
 if [[ -n "${AUTH_HEADER}" ]]; then
   AUTH_ARGS=(-H "${AUTH_HEADER}")
 fi
+
+curl_env_cmd=(env)
+proxy_env_vars=(http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy)
+if is_truthy "${N8N_CURL_DISABLE_PROXY:-}"; then
+  for var in "${proxy_env_vars[@]}" NO_PROXY no_proxy; do
+    curl_env_cmd+=(-u "${var}")
+  done
+else
+  if [[ -n "${N8N_CURL_PROXY:-}" ]]; then
+    for var in "${proxy_env_vars[@]}"; do
+      curl_env_cmd+=("${var}=${N8N_CURL_PROXY}")
+    done
+  fi
+fi
+
+if [[ -n "${N8N_CURL_NO_PROXY:-}" ]]; then
+  curl_env_cmd+=("NO_PROXY=${N8N_CURL_NO_PROXY}" "no_proxy=${N8N_CURL_NO_PROXY}")
+fi
+
+if (( ${#curl_env_cmd[@]} == 1 )); then
+  curl_env_cmd=()
+fi
+
+CURL_EXTRA_ARGS=()
+if [[ -n "${N8N_CURL_EXTRA_ARGS:-}" ]]; then
+  while IFS= read -r line; do
+    CURL_EXTRA_ARGS+=("${line}")
+  done < <(
+    python - <<'PY'
+import json
+import os
+import sys
+raw = os.environ.get('N8N_CURL_EXTRA_ARGS', '')
+try:
+    value = json.loads(raw)
+except Exception as exc:  # noqa: BLE001
+    print(f'invalid-json: {exc}', file=sys.stderr)
+    sys.exit(1)
+if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+    print('N8N_CURL_EXTRA_ARGS must be a JSON array of strings', file=sys.stderr)
+    sys.exit(1)
+for item in value:
+    print(item)
+PY
+  )
+fi
+
+run_curl() {
+  local args=()
+  args+=(-sS)
+  if (( ${#CURL_EXTRA_ARGS[@]} > 0 )); then
+    args+=("${CURL_EXTRA_ARGS[@]}")
+  fi
+  args+=("$@")
+  if (( ${#curl_env_cmd[@]} > 0 )); then
+    "${curl_env_cmd[@]}" curl "${args[@]}"
+  else
+    curl "${args[@]}"
+  fi
+}
 
 missing=()
 for var in N8N_HOST WORKFLOW_ID WEBHOOK_BASE_URL; do
@@ -71,7 +139,7 @@ print(json.dumps(payload))
 PY
 )"
 
-response="$(curl -sS -X POST "${N8N_BASE}/rest/workflows/run" \
+response="$(run_curl -X POST "${N8N_BASE}/rest/workflows/run" \
   -H "Content-Type: application/json" \
   "${AUTH_ARGS[@]}" \
   --data "${payload}")"
@@ -113,7 +181,7 @@ sleep_interval=3
 status_json=""
 finished="false"
 for ((i=0; i<wait_attempts; i++)); do
-  status_json="$(curl -sS "${AUTH_ARGS[@]}" "${N8N_BASE}/rest/executions/${execution_id}")"
+  status_json="$(run_curl "${AUTH_ARGS[@]}" "${N8N_BASE}/rest/executions/${execution_id}")"
   finished="$(python - <<'PY'
 import json
 import sys
