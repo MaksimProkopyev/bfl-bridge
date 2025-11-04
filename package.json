@@ -1,0 +1,17 @@
+{
+  "name": "bfl-bridge",
+  "version": "1.0.0",
+  "description": "BFL bridge: n8n patcher & E2E",
+  "main": "index.js",
+  "scripts": {
+    "patch:bridge": "node tools/n8n/patch-bridge.mjs",
+    "test:e2e": "tools/n8n/test-e2e.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "dotenv": "file:vendor/dotenv"
+  }
+}
