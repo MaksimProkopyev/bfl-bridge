@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env.local"
@@ -263,26 +264,51 @@ def accumulate(node_keys, count_key, payload_key):
                 candidates.append(("payload", payload.get("body")))
 
             counted = False
+            seen_usable_zero = False
             for source, candidate in candidates:
                 body = normalise_body(candidate)
                 if body is None:
                     continue
-                value = None
-                if isinstance(body, dict) and payload_key in body:
-                    value = body.get(payload_key)
-                elif isinstance(body, list) and source != "payload":
-                    value = body
-                elif source in {"request", "data", "entry"} and not isinstance(body, dict):
-                    value = body
-                else:
-                    continue
+                def summarise(value):
+                    if isinstance(value, list):
+                        return len(value), True
+                    if isinstance(value, dict):
+                        if payload_key in value:
+                            payload_value = value.get(payload_key)
+                            if isinstance(payload_value, list):
+                                return len(payload_value), True
+                            if payload_value not in (None, "", []):
+                                return 1, True
+                            return 0, True
+                        if "to_a" in value or "to_b" in value:
+                            key = "to_a" if "to_a" in value else "to_b"
+                            payload_value = value.get(key)
+                            if isinstance(payload_value, list):
+                                return len(payload_value), True
+                            if payload_value not in (None, "", []):
+                                return 1, True
+                            return 0, True
+                        if value:
+                            return 1, True
+                        return 0, False
+                    if isinstance(value, str):
+                        if value:
+                            return 1, True
+                        return 0, False
+                    if value not in (None, "", []):
+                        return 1, True
+                    return 0, False
 
-                if isinstance(value, list):
-                    total += len(value)
-                else:
-                    total += 1
+                count, usable = summarise(body)
+                if not usable:
+                    continue
+                if count > 0:
+                    total += count
+                    counted = True
+                    break
+                seen_usable_zero = True
+            if not counted and seen_usable_zero:
                 counted = True
-                break
             if not counted:
                 errors.append(f"{node_key}:missing_body")
     counts[count_key] = total
