@@ -243,17 +243,21 @@ def accumulate(node_keys, count_key, payload_key):
         node_runs = run_data.get(node_key, []) or []
         for entry in node_runs:
             payload = entry.get("json", {}) if isinstance(entry, dict) else {}
-            status = payload.get("statusCode")
-            if status is None:
+            status_raw = payload.get("statusCode")
+            if status_raw is None:
                 errors.append(f"{node_key}:missing_status")
             else:
-                try:
-                    status_value = int(status)
-                except (TypeError, ValueError):
-                    errors.append(f"{node_key}:status_{status}")
+                status_text = str(status_raw).strip()
+                if not status_text:
+                    errors.append(f"{node_key}:missing_status")
                 else:
-                    if not (200 <= status_value < 300):
-                        errors.append(f"{node_key}:status_{status}")
+                    try:
+                        status_value = int(status_text)
+                    except (TypeError, ValueError):
+                        errors.append(f"{node_key}:status_{status_text}")
+                    else:
+                        if not (200 <= status_value < 300):
+                            errors.append(f"{node_key}:status_{status_value}")
 
             candidates = []
             if isinstance(payload, dict):
