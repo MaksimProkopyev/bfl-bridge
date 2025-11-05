@@ -372,3 +372,17 @@ else:
 PY <<<'${status_json}')"
 
 echo "test:e2e: ${result}"
+if ! python - "${result}" <<'PY'
+import json
+import sys
+
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(1)
+
+sys.exit(0 if data.get("ok") else 1)
+PY
+then
+  exit 1
+fi
