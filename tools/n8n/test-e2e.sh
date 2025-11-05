@@ -265,26 +265,66 @@ def accumulate(node_keys, count_key, payload_key):
 
             counted = False
             seen_usable_zero = False
-            for source, candidate in candidates:
+            for _source, candidate in candidates:
                 body = normalise_body(candidate)
                 if body is None:
                     continue
+
+                def summarise_payload(payload_value):
+                    if isinstance(payload_value, list):
+                        return len(payload_value), True
+                    if isinstance(payload_value, dict):
+                        if payload_value:
+                            return 1, True
+                        return 0, False
+                    if isinstance(payload_value, str):
+                        payload_value = payload_value.strip()
+                        if payload_value:
+                            return 1, True
+                        return 0, False
+                    if payload_value not in (None, "", []):
+                        return 1, True
+                    return 0, False
+
                 def summarise(value):
                     if isinstance(value, list):
                         return len(value), True
                     if isinstance(value, dict):
-                        for candidate_key in (count_key, payload_key, "to_a", "to_b"):
-                            if candidate_key in value:
-                                payload_value = value.get(candidate_key)
-                                if isinstance(payload_value, list):
-                                    return len(payload_value), True
-                                if payload_value not in (None, "", []):
-                                    return 1, True
-                                return 0, True
+                        candidate_keys = []
+                        for candidate_key in (count_key, payload_key):
+                            if candidate_key and candidate_key not in candidate_keys:
+                                candidate_keys.append(candidate_key)
+
+                        def inspect(container):
+                            for candidate_key in candidate_keys:
+                                if candidate_key in container:
+                                    return summarise_payload(container.get(candidate_key))
+                            return None
+
+                        inspected = inspect(value)
+                        if inspected is not None:
+                            return inspected
+
+                        actions = value.get("actions")
+                        if isinstance(actions, dict):
+                            inspected = inspect(actions)
+                            if inspected is not None:
+                                return inspected
+
                         if value:
+                            other_counter_keys = {
+                                key for key in ("to_a", "to_b") if key and key != count_key
+                            }
+                            if any(key in value for key in other_counter_keys):
+                                return 0, True
+                            if isinstance(actions, dict) and any(
+                                key in actions for key in other_counter_keys
+                            ):
+                                return 0, True
                             return 1, True
                         return 0, False
                     if isinstance(value, str):
+                        value = value.strip()
                         if value:
                             return 1, True
                         return 0, False
