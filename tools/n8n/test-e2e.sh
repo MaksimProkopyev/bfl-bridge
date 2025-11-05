@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env.local"
@@ -222,26 +223,137 @@ counts = {"to_a": 0, "to_b": 0}
 errors = []
 
 
-def accumulate(node_key, count_key):
-    node_runs = run_data.get(node_key, []) or []
+def normalise_body(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return json.loads(value)
+        except Exception:  # noqa: BLE001
+            return value
+    return value
+
+
+def accumulate(node_keys, count_key, payload_key):
     total = 0
-    for entry in node_runs:
-        payload = entry.get("json", {}) if isinstance(entry, dict) else {}
-        status = payload.get("statusCode")
-        if status is None:
-            errors.append(f"{node_key}:missing_status")
-        elif not (200 <= int(status) < 300):
-            errors.append(f"{node_key}:status_{status}")
-        body = payload.get("body")
-        if isinstance(body, list):
-            total += len(body)
-        elif body is not None:
-            total += 1
+    for node_key in node_keys:
+        node_runs = run_data.get(node_key, []) or []
+        for entry in node_runs:
+            payload = entry.get("json", {}) if isinstance(entry, dict) else {}
+            status = payload.get("statusCode")
+            if status is None:
+                errors.append(f"{node_key}:missing_status")
+            elif not (200 <= int(status) < 300):
+                errors.append(f"{node_key}:status_{status}")
+
+            candidates = []
+            if isinstance(payload, dict):
+                request = payload.get("request")
+                if isinstance(request, dict):
+                    candidates.append(("request", request.get("body")))
+            if isinstance(entry, dict):
+                data_body = None
+                if isinstance(entry.get("data"), dict):
+                    data_body = entry["data"].get("body")
+                    candidates.append(("data", data_body))
+                candidates.append(("entry", entry.get("body")))
+            if isinstance(payload, dict):
+                candidates.append(("payload", payload.get("body")))
+
+            counted = False
+            seen_usable_zero = False
+            for _source, candidate in candidates:
+                body = normalise_body(candidate)
+                if body is None:
+                    continue
+
+                def summarise_payload(payload_value):
+                    if isinstance(payload_value, list):
+                        return len(payload_value), True
+                    if isinstance(payload_value, dict):
+                        if payload_value:
+                            return 1, True
+                        return 0, False
+                    if isinstance(payload_value, str):
+                        payload_value = payload_value.strip()
+                        if payload_value:
+                            return 1, True
+                        return 0, False
+                    if payload_value not in (None, "", []):
+                        return 1, True
+                    return 0, False
+
+                def summarise(value):
+                    if isinstance(value, list):
+                        return len(value), True
+                    if isinstance(value, dict):
+                        def inspect(container):
+                            candidate_keys = [
+                                key for key in (count_key, payload_key) if key
+                            ]
+                            for candidate_key in candidate_keys:
+                                if candidate_key in container:
+                                    return summarise_payload(container.get(candidate_key))
+
+                            other_counter_keys = [
+                                key for key in ("to_a", "to_b") if key and key != count_key
+                            ]
+                            if any(key in container for key in other_counter_keys):
+                                return 0, True
+
+                            return None
+
+                        inspected = inspect(value)
+                        if inspected is not None:
+                            return inspected
+
+                        actions = value.get("actions")
+                        if isinstance(actions, dict):
+                            inspected = inspect(actions)
+                            if inspected is not None:
+                                return inspected
+
+                        if value:
+                            other_counter_keys = [
+                                key for key in ("to_a", "to_b") if key and key != count_key
+                            ]
+                            if any(key in value for key in other_counter_keys):
+                                return 0, True
+                            if isinstance(actions, dict) and any(
+                                key in actions for key in other_counter_keys
+                            ):
+                                return 0, True
+                            return 1, True
+                        return 0, False
+                    if isinstance(value, str):
+                        value = value.strip()
+                        if value:
+                            return 1, True
+                        return 0, False
+                    if value not in (None, "", []):
+                        return 1, True
+                    return 0, False
+
+                count, usable = summarise(body)
+                if not usable:
+                    continue
+                if count > 0:
+                    total += count
+                    counted = True
+                    break
+                seen_usable_zero = True
+            if not counted and seen_usable_zero:
+                counted = True
+            if not counted:
+                errors.append(f"{node_key}:missing_body")
     counts[count_key] = total
 
 
-accumulate("leadgen_a_http", "to_a")
-accumulate("leadgen_b_http", "to_b")
+accumulate(["leadgen_a_http", "HTTP A", "HTTP A Request"], "to_a", "new_urls")
+accumulate(["leadgen_b_http", "HTTP B", "HTTP B Request"], "to_b", "candidates")
 
 if errors:
     print(json.dumps({"ok": False, "counts": counts, "errors": errors}))

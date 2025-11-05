@@ -1,0 +1,13 @@
+name: bash-syntax
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  sh-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check test-e2e.sh
+        run: bash -n tools/n8n/test-e2e.sh
