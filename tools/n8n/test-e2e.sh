@@ -291,19 +291,19 @@ def accumulate(node_keys, count_key, payload_key):
                         return len(value), True
                     if isinstance(value, dict):
                         def inspect(container):
-                            candidate_keys = []
-                            for candidate_key in (count_key, payload_key):
-                                if candidate_key and candidate_key not in candidate_keys:
-                                    candidate_keys.append(candidate_key)
-                            if not any(
-                                key in container for key in candidate_keys if key
-                            ):
-                                for fallback_key in ("to_a", "to_b"):
-                                    if fallback_key and fallback_key not in candidate_keys:
-                                        candidate_keys.append(fallback_key)
+                            candidate_keys = [
+                                key for key in (count_key, payload_key) if key
+                            ]
                             for candidate_key in candidate_keys:
                                 if candidate_key in container:
                                     return summarise_payload(container.get(candidate_key))
+
+                            other_counter_keys = [
+                                key for key in ("to_a", "to_b") if key and key != count_key
+                            ]
+                            if any(key in container for key in other_counter_keys):
+                                return 0, True
+
                             return None
 
                         inspected = inspect(value)
@@ -317,9 +317,9 @@ def accumulate(node_keys, count_key, payload_key):
                                 return inspected
 
                         if value:
-                            other_counter_keys = {
+                            other_counter_keys = [
                                 key for key in ("to_a", "to_b") if key and key != count_key
-                            }
+                            ]
                             if any(key in value for key in other_counter_keys):
                                 return 0, True
                             if isinstance(actions, dict) and any(
