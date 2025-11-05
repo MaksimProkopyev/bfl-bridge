@@ -273,21 +273,14 @@ def accumulate(node_keys, count_key, payload_key):
                     if isinstance(value, list):
                         return len(value), True
                     if isinstance(value, dict):
-                        if payload_key in value:
-                            payload_value = value.get(payload_key)
-                            if isinstance(payload_value, list):
-                                return len(payload_value), True
-                            if payload_value not in (None, "", []):
-                                return 1, True
-                            return 0, True
-                        if "to_a" in value or "to_b" in value:
-                            key = "to_a" if "to_a" in value else "to_b"
-                            payload_value = value.get(key)
-                            if isinstance(payload_value, list):
-                                return len(payload_value), True
-                            if payload_value not in (None, "", []):
-                                return 1, True
-                            return 0, True
+                        for candidate_key in (count_key, payload_key, "to_a", "to_b"):
+                            if candidate_key in value:
+                                payload_value = value.get(candidate_key)
+                                if isinstance(payload_value, list):
+                                    return len(payload_value), True
+                                if payload_value not in (None, "", []):
+                                    return 1, True
+                                return 0, True
                         if value:
                             return 1, True
                         return 0, False
