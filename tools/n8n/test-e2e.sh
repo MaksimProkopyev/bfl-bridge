@@ -290,12 +290,17 @@ def accumulate(node_keys, count_key, payload_key):
                     if isinstance(value, list):
                         return len(value), True
                     if isinstance(value, dict):
-                        candidate_keys = []
-                        for candidate_key in (count_key, payload_key):
-                            if candidate_key and candidate_key not in candidate_keys:
-                                candidate_keys.append(candidate_key)
-
                         def inspect(container):
+                            candidate_keys = []
+                            for candidate_key in (count_key, payload_key):
+                                if candidate_key and candidate_key not in candidate_keys:
+                                    candidate_keys.append(candidate_key)
+                            if not any(
+                                key in container for key in candidate_keys if key
+                            ):
+                                for fallback_key in ("to_a", "to_b"):
+                                    if fallback_key and fallback_key not in candidate_keys:
+                                        candidate_keys.append(fallback_key)
                             for candidate_key in candidate_keys:
                                 if candidate_key in container:
                                     return summarise_payload(container.get(candidate_key))
