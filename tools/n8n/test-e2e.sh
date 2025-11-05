@@ -222,26 +222,27 @@ counts = {"to_a": 0, "to_b": 0}
 errors = []
 
 
-def accumulate(node_key, count_key):
-    node_runs = run_data.get(node_key, []) or []
+def accumulate(node_keys, count_key):
     total = 0
-    for entry in node_runs:
-        payload = entry.get("json", {}) if isinstance(entry, dict) else {}
-        status = payload.get("statusCode")
-        if status is None:
-            errors.append(f"{node_key}:missing_status")
-        elif not (200 <= int(status) < 300):
-            errors.append(f"{node_key}:status_{status}")
-        body = payload.get("body")
-        if isinstance(body, list):
-            total += len(body)
-        elif body is not None:
-            total += 1
+    for node_key in node_keys:
+        node_runs = run_data.get(node_key, []) or []
+        for entry in node_runs:
+            payload = entry.get("json", {}) if isinstance(entry, dict) else {}
+            status = payload.get("statusCode")
+            if status is None:
+                errors.append(f"{node_key}:missing_status")
+            elif not (200 <= int(status) < 300):
+                errors.append(f"{node_key}:status_{status}")
+            body = payload.get("body")
+            if isinstance(body, list):
+                total += len(body)
+            elif body is not None:
+                total += 1
     counts[count_key] = total
 
 
-accumulate("leadgen_a_http", "to_a")
-accumulate("leadgen_b_http", "to_b")
+accumulate(["leadgen_a_http", "HTTP A"], "to_a")
+accumulate(["leadgen_b_http", "HTTP B"], "to_b")
 
 if errors:
     print(json.dumps({"ok": False, "counts": counts, "errors": errors}))
