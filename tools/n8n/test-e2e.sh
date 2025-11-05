@@ -222,26 +222,74 @@ counts = {"to_a": 0, "to_b": 0}
 errors = []
 
 
-def accumulate(node_key, count_key):
-    node_runs = run_data.get(node_key, []) or []
+def normalise_body(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return json.loads(value)
+        except Exception:  # noqa: BLE001
+            return value
+    return value
+
+
+def accumulate(node_keys, count_key, payload_key):
     total = 0
-    for entry in node_runs:
-        payload = entry.get("json", {}) if isinstance(entry, dict) else {}
-        status = payload.get("statusCode")
-        if status is None:
-            errors.append(f"{node_key}:missing_status")
-        elif not (200 <= int(status) < 300):
-            errors.append(f"{node_key}:status_{status}")
-        body = payload.get("body")
-        if isinstance(body, list):
-            total += len(body)
-        elif body is not None:
-            total += 1
+    for node_key in node_keys:
+        node_runs = run_data.get(node_key, []) or []
+        for entry in node_runs:
+            payload = entry.get("json", {}) if isinstance(entry, dict) else {}
+            status = payload.get("statusCode")
+            if status is None:
+                errors.append(f"{node_key}:missing_status")
+            elif not (200 <= int(status) < 300):
+                errors.append(f"{node_key}:status_{status}")
+
+            candidates = []
+            if isinstance(payload, dict):
+                request = payload.get("request")
+                if isinstance(request, dict):
+                    candidates.append(("request", request.get("body")))
+            if isinstance(entry, dict):
+                data_body = None
+                if isinstance(entry.get("data"), dict):
+                    data_body = entry["data"].get("body")
+                    candidates.append(("data", data_body))
+                candidates.append(("entry", entry.get("body")))
+            if isinstance(payload, dict):
+                candidates.append(("payload", payload.get("body")))
+
+            counted = False
+            for source, candidate in candidates:
+                body = normalise_body(candidate)
+                if body is None:
+                    continue
+                value = None
+                if isinstance(body, dict) and payload_key in body:
+                    value = body.get(payload_key)
+                elif isinstance(body, list) and source != "payload":
+                    value = body
+                elif source in {"request", "data", "entry"} and not isinstance(body, dict):
+                    value = body
+                else:
+                    continue
+
+                if isinstance(value, list):
+                    total += len(value)
+                else:
+                    total += 1
+                counted = True
+                break
+            if not counted:
+                errors.append(f"{node_key}:missing_body")
     counts[count_key] = total
 
 
-accumulate("leadgen_a_http", "to_a")
-accumulate("leadgen_b_http", "to_b")
+accumulate(["leadgen_a_http", "HTTP A", "HTTP A Request"], "to_a", "new_urls")
+accumulate(["leadgen_b_http", "HTTP B", "HTTP B Request"], "to_b", "candidates")
 
 if errors:
     print(json.dumps({"ok": False, "counts": counts, "errors": errors}))
