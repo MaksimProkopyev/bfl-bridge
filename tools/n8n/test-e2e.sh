@@ -246,8 +246,14 @@ def accumulate(node_keys, count_key, payload_key):
             status = payload.get("statusCode")
             if status is None:
                 errors.append(f"{node_key}:missing_status")
-            elif not (200 <= int(status) < 300):
-                errors.append(f"{node_key}:status_{status}")
+            else:
+                try:
+                    status_value = int(status)
+                except (TypeError, ValueError):
+                    errors.append(f"{node_key}:status_{status}")
+                else:
+                    if not (200 <= status_value < 300):
+                        errors.append(f"{node_key}:status_{status}")
 
             candidates = []
             if isinstance(payload, dict):
