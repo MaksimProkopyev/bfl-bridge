@@ -55,6 +55,7 @@ curl_noproxy_args=()
 if [[ -n "${curl_noproxy_hosts//,/}" ]]; then
   curl_noproxy_args=(--noproxy "${curl_noproxy_hosts}")
 fi
+echo "• curl --noproxy targets: ${curl_noproxy_hosts:-<none>}"
 
 # Авторизация для n8n REST
 auth_args=()
@@ -113,8 +114,6 @@ curl "${curl_noproxy_args[@]}" -sS -o /dev/null -w "HTTP %{http_code} via %{sche
 echo "DNS/TLS ок, если кода ошибки от curl нет."
 
 # Сопоставление хостов
-host_from_webhook="$(printf '%s' "${WEBHOOK_BASE_URL}" | sed -E 's#^https?://([^/]+)/?.*#\1#')"
-host_from_api="$(printf '%s' "${N8N_HOST}" | sed -E 's#^https?://([^/]+)/?.*#\1#')"
 echo "Host(webhook)=${host_from_webhook} | Host(api)=${host_from_api}"
 if [[ "${host_from_webhook}" != "${host_from_api}" ]]; then
   echo "⚠️ Несовпадение хостов WEBHOOK_BASE_URL vs N8N_HOST — это допустимо только при корректном проксировании."
