@@ -31,10 +31,15 @@ echo
 host_from_webhook="$(printf '%s' "${WEBHOOK_BASE_URL}" | sed -E 's#^https?://([^/]+)/?.*#\1#')"
 host_from_api="$(printf '%s' "${N8N_HOST}" | sed -E 's#^https?://([^/]+)/?.*#\1#')"
 _np_req_list=(".beget.app" "lunirepoko.beget.app" "localhost" "127.0.0.1" "${host_from_api}" "${host_from_webhook}")
-_np_cur=",$(printf '%s' "${NO_PROXY-}")"; _np_cur="${_np_cur%,}"; _np_new=""
+# Текущий список + ведущая запятая для устойчивого поиска по делимитеру
+_np_cur=",$(printf '%s' "${NO_PROXY-}")"; _np_cur="${_np_cur%,}"
+_np_new=""
 for h in "${_np_req_list[@]}"; do
   [[ -z "${h}" ]] && continue
-  case "${_np_cur}," in *,"${h}",*) ;; *) _np_new="${_np_new:+${_np_new},}${h}";; esac
+  case ",${_np_cur}," in
+    *,"${h}",*) ;;
+    *) _np_new="${_np_new:+${_np_new},}${h}"; _np_cur="${_np_cur},${h}";;
+  esac
 done
 if [[ -n "${_np_new}" ]]; then
   export NO_PROXY="${NO_PROXY:+${NO_PROXY},}${_np_new}"
