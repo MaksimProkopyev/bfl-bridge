@@ -1,0 +1,20 @@
+{
+  "host": "https://lunirepoko.beget.app",
+  "webhook_base": "https://lunirepoko.beget.app",
+  "rest_auth": "X-N8N-API-KEY",
+  "checks": {
+    "http_nodes": [],
+    "url_match": {
+      "A": "unknown",
+      "B": "unknown"
+    },
+    "openai_chat_nodes": null,
+    "extract_to_return_edge": null,
+    "openai_env_set": false,
+    "errors": [
+      "curl CONNECT tunnel failed via corporate proxy (HTTP 403)",
+      "workflow fetch aborted; дальнейшие проверки невозможны"
+    ]
+  },
+  "timestamp": "2025-11-06T12:22:50.027251+00:00"
+}
