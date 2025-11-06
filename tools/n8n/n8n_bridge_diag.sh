@@ -39,8 +39,21 @@ else
 fi
 echo "REST auth: ${auth_kind}"
 
+curl_with_proxy_retry() {
+  local resp code body
+  resp="$(curl "$@" || true)"
+  code="${resp##*$'\n'}"
+  body="${resp%$'\n'*}"
+  [[ "${code}" == "${resp}" ]] && body=""
+  if [[ -z "${resp}" || "${code}" == "000" || "${body}" == *"CONNECT tunnel failed"* || "${body}" == *"response 403"* ]]; then
+    resp="$(curl --noproxy '*' "$@" || true)"
+  fi
+  printf '%s' "${resp}"
+}
+
 api() { # $1=METHOD $2=PATH
-  curl -sS -w '\n%{http_code}' -X "$1" "${N8N_HOST%/}$2" \
+  curl_with_proxy_retry \
+    -sS -w $'\n%{http_code}' -X "$1" "${N8N_HOST%/}$2" \
     -H 'Content-Type: application/json' "${auth_args[@]}" "${@:3}"
 }
 
@@ -126,16 +139,19 @@ B_URL="${WEBHOOK_BASE_URL%/}/webhook/bfl/leadgen/intake-b"
 
 probe() {
   local url="$1" name="$2"
-  local code body
-  body="$(curl -sS -o /tmp/resp.$$ -w "%{http_code}" -X POST "$url" -H 'content-type: application/json' -d '{}' || true)"
-  code="${body:(-3)}"
-  echo "${name}: HTTP ${code}, body($url) bytes=$(wc -c </tmp/resp.$$)"
+  local code body resp tmp
+  tmp="$(mktemp)"
+  resp="$(curl_with_proxy_retry -sS -o "${tmp}" -w $'\n%{http_code}' -X POST "$url" -H 'content-type: application/json' -d '{}' )"
+  code="${resp##*$'\n'}"
+  body="${resp%$'\n'*}"
+  [[ "${code}" == "${resp}" ]] && body=""
+  echo "${name}: HTTP ${code}, body($url) bytes=$(wc -c <"${tmp}")"
   case "$code" in
     200|201|202|204|400|405) echo "✓ ${name} открыт (ожидалось именно это)";;
     401|403) echo "❌ ${name} защищён — вероятно включён Basic/Auth на /webhook/* или конкретном роуте.";;
     *) echo "⚠️ ${name}: нестандартный ответ ${code} — проверь логи n8n/ingress.";;
   esac
-  rm -f /tmp/resp.$$
+  rm -f "${tmp}"
 }
 
 probe "${A_URL}" "Webhook A"
