@@ -69,17 +69,24 @@ fi
 echo "REST auth: ${auth_kind}"
 
 curl_with_proxy_retry() {
-  local args tmp err status err_msg
+  local args tmp err status err_msg already_noproxy=0
   args=("$@")
   tmp="$(mktemp)"
   err="$(mktemp)"
+
+  for ((i=0; i<${#args[@]}; ++i)); do
+    if [[ "${args[i]}" == "--noproxy" ]]; then
+      already_noproxy=1
+      break
+    fi
+  done
 
   if curl "${args[@]}" >"${tmp}" 2>"${err}"; then
     status=0
   else
     status=$?
     err_msg="$(<"${err}")"
-    if [[ "${err_msg}" == *"CONNECT tunnel failed"* || "${err_msg}" == *"Received HTTP code 403 from proxy after CONNECT"* || "${err_msg}" == *"Proxy CONNECT aborted"* ]]; then
+    if (( already_noproxy == 0 )) && [[ "${err_msg}" == *"CONNECT tunnel failed"* || "${err_msg}" == *"Received HTTP code 403 from proxy after CONNECT"* || "${err_msg}" == *"Proxy CONNECT aborted"* ]]; then
       if curl --noproxy '*' "${args[@]}" >"${tmp}" 2>"${err}"; then
         status=0
       else
@@ -96,7 +103,7 @@ curl_with_proxy_retry() {
 
 api() { # $1=METHOD $2=PATH
   curl_with_proxy_retry \
-    -sS -w $'\n%{http_code}' -X "$1" "${N8N_HOST%/}$2" \
+    "${curl_noproxy_args[@]}" -sS -w $'\n%{http_code}' -X "$1" "${N8N_HOST%/}$2" \
     -H 'Content-Type: application/json' "${auth_args[@]}" "${@:3}"
 }
 
