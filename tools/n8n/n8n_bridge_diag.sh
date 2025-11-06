@@ -42,6 +42,15 @@ fi
 export no_proxy="${NO_PROXY}"
 echo "• NO_PROXY expanded (len=${#NO_PROXY})"
 
+curl_noproxy_hosts="${host_from_api}"
+if [[ -n "${host_from_webhook}" && "${host_from_webhook}" != "${host_from_api}" ]]; then
+  curl_noproxy_hosts+="${curl_noproxy_hosts:+,}${host_from_webhook}"
+fi
+curl_noproxy_args=()
+if [[ -n "${curl_noproxy_hosts//,/}" ]]; then
+  curl_noproxy_args=(--noproxy "${curl_noproxy_hosts}")
+fi
+
 # Авторизация для n8n REST
 auth_args=()
 auth_kind=""
@@ -88,7 +97,7 @@ api() { # $1=METHOD $2=PATH
 
 # ===== 1) Сетевые проверки =====
 echo; echo "→ TLS/HTTP проверка хоста ${N8N_HOST} (bypass proxy)"
-curl --noproxy "${host_from_api}" -sS -o /dev/null -w "HTTP %{http_code} via %{scheme} TLSv%{ssl_verify_result}\n" "${N8N_HOST%/}/" || true
+curl "${curl_noproxy_args[@]}" -sS -o /dev/null -w "HTTP %{http_code} via %{scheme} TLSv%{ssl_verify_result}\n" "${N8N_HOST%/}/" || true
 echo "DNS/TLS ок, если кода ошибки от curl нет."
 
 # Сопоставление хостов
@@ -170,7 +179,7 @@ probe() {
   local url="$1" name="$2"
   local code body resp tmp
   tmp="$(mktemp)"
-  resp="$(curl --noproxy "${host_from_webhook},${host_from_api}" -sS -o "${tmp}" -w $'\n%{http_code}' -X POST "$url" -H 'content-type: application/json' -d '{}' || true)"
+  resp="$(curl "${curl_noproxy_args[@]}" -sS -o "${tmp}" -w $'\n%{http_code}' -X POST "$url" -H 'content-type: application/json' -d '{}' || true)"
   code="${resp##*$'\n'}"
   body="${resp%$'\n'*}"
   [[ "${code}" == "${resp}" ]] && body=""
