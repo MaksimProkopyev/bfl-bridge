@@ -40,15 +40,29 @@ fi
 echo "REST auth: ${auth_kind}"
 
 curl_with_proxy_retry() {
-  local resp code body
-  resp="$(curl "$@" || true)"
-  code="${resp##*$'\n'}"
-  body="${resp%$'\n'*}"
-  [[ "${code}" == "${resp}" ]] && body=""
-  if [[ -z "${resp}" || "${code}" == "000" || "${body}" == *"CONNECT tunnel failed"* || "${body}" == *"response 403"* ]]; then
-    resp="$(curl --noproxy '*' "$@" || true)"
+  local args tmp err status err_msg
+  args=("$@")
+  tmp="$(mktemp)"
+  err="$(mktemp)"
+
+  if curl "${args[@]}" >"${tmp}" 2>"${err}"; then
+    status=0
+  else
+    status=$?
+    err_msg="$(<"${err}")"
+    if [[ "${err_msg}" == *"CONNECT tunnel failed"* || "${err_msg}" == *"Received HTTP code 403 from proxy after CONNECT"* || "${err_msg}" == *"Proxy CONNECT aborted"* ]]; then
+      if curl --noproxy '*' "${args[@]}" >"${tmp}" 2>"${err}"; then
+        status=0
+      else
+        status=$?
+      fi
+    fi
   fi
-  printf '%s' "${resp}"
+
+  cat "${err}" >&2
+  cat "${tmp}"
+  rm -f "${tmp}" "${err}"
+  return "${status}"
 }
 
 api() { # $1=METHOD $2=PATH
