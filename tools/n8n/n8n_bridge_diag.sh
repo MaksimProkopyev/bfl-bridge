@@ -170,7 +170,7 @@ probe() {
   local url="$1" name="$2"
   local code body resp tmp
   tmp="$(mktemp)"
-  resp="$(curl_with_proxy_retry --noproxy "${host_from_webhook},${host_from_api}" -sS -o "${tmp}" -w $'\n%{http_code}' -X POST "$url" -H 'content-type: application/json' -d '{}' )"
+  resp="$(curl --noproxy "${host_from_webhook},${host_from_api}" -sS -o "${tmp}" -w $'\n%{http_code}' -X POST "$url" -H 'content-type: application/json' -d '{}' || true)"
   code="${resp##*$'\n'}"
   body="${resp%$'\n'*}"
   [[ "${code}" == "${resp}" ]] && body=""
