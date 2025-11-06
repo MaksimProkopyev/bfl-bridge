@@ -27,6 +27,21 @@ print_flag OPENAI_API_KEY
 print_flag HTTPS_PROXY; print_flag NO_PROXY
 echo
 
+# ===== 0.1) Обход прокси для beget/localhost ДО первого curl =====
+host_from_webhook="$(printf '%s' "${WEBHOOK_BASE_URL}" | sed -E 's#^https?://([^/]+)/?.*#\1#')"
+host_from_api="$(printf '%s' "${N8N_HOST}" | sed -E 's#^https?://([^/]+)/?.*#\1#')"
+_np_req_list=(".beget.app" "lunirepoko.beget.app" "localhost" "127.0.0.1" "${host_from_api}" "${host_from_webhook}")
+_np_cur=",$(printf '%s' "${NO_PROXY-}")"; _np_cur="${_np_cur%,}"; _np_new=""
+for h in "${_np_req_list[@]}"; do
+  [[ -z "${h}" ]] && continue
+  case "${_np_cur}," in *,"${h}",*) ;; *) _np_new="${_np_new:+${_np_new},}${h}";; esac
+done
+if [[ -n "${_np_new}" ]]; then
+  export NO_PROXY="${NO_PROXY:+${NO_PROXY},}${_np_new}"
+fi
+export no_proxy="${NO_PROXY}"
+echo "• NO_PROXY expanded (len=${#NO_PROXY})"
+
 # Авторизация для n8n REST
 auth_args=()
 auth_kind=""
@@ -72,8 +87,8 @@ api() { # $1=METHOD $2=PATH
 }
 
 # ===== 1) Сетевые проверки =====
-echo; echo "→ TLS/HTTP проверка хоста ${N8N_HOST}"
-curl -sS -o /dev/null -w "HTTP %{http_code} via %{scheme} TLSv%{ssl_verify_result}\n" "${N8N_HOST%/}/" || true
+echo; echo "→ TLS/HTTP проверка хоста ${N8N_HOST} (bypass proxy)"
+curl --noproxy "${host_from_api}" -sS -o /dev/null -w "HTTP %{http_code} via %{scheme} TLSv%{ssl_verify_result}\n" "${N8N_HOST%/}/" || true
 echo "DNS/TLS ок, если кода ошибки от curl нет."
 
 # Сопоставление хостов
@@ -155,7 +170,7 @@ probe() {
   local url="$1" name="$2"
   local code body resp tmp
   tmp="$(mktemp)"
-  resp="$(curl_with_proxy_retry -sS -o "${tmp}" -w $'\n%{http_code}' -X POST "$url" -H 'content-type: application/json' -d '{}' )"
+  resp="$(curl_with_proxy_retry --noproxy "${host_from_webhook},${host_from_api}" -sS -o "${tmp}" -w $'\n%{http_code}' -X POST "$url" -H 'content-type: application/json' -d '{}' )"
   code="${resp##*$'\n'}"
   body="${resp%$'\n'*}"
   [[ "${code}" == "${resp}" ]] && body=""
