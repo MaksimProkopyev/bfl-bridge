@@ -1,0 +1,10 @@
+# --- BFL: allow /webhook/* without auth (Apache 2.4) ---
+SetEnvIfNoCase Request_URI "^/webhook/" BFL_ALLOW=1
+
+<IfModule mod_authz_core.c>
+  <RequireAny>
+    Require env BFL_ALLOW
+    Require valid-user
+  </RequireAny>
+</IfModule>
+# --- /BFL ---

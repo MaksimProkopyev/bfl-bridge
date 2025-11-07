@@ -1,0 +1,20 @@
+name: Diagnostics
+
+on:
+  workflow_dispatch:
+
+env:
+  NO_PROXY: ".beget.app,lunirepoko.beget.app,localhost,127.0.0.1"
+  no_proxy: ".beget.app,lunirepoko.beget.app,localhost,127.0.0.1"
+
+permissions: {}
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Display diagnostics
+        run: |
+          echo "Repository checked out"
+          echo "NO_PROXY=${NO_PROXY}"
