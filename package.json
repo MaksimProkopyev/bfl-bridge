@@ -4,7 +4,7 @@
   "description": "BFL bridge: n8n patcher & E2E",
   "main": "index.js",
   "scripts": {
-    "patch:bridge": "node tools/n8n/patch-bridge.mjs",
+    "patch:bridge": "./tools/n8n/bridge_diag_fix.sh",
     "test:e2e": "tools/n8n/test-e2e.sh"
   },
   "keywords": [],
