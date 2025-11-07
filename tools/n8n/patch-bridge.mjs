@@ -17,7 +17,16 @@ function getEnv(name, { required = false } = {}) {
   return value ? value.trim() : '';
 }
 
-const host = getEnv('N8N_HOST', { required: true }).replace(/\/$/, '');
+const rawHost = getEnv('N8N_HOST', { required: true }).replace(/\/$/, '');
+const normalizedHost = rawHost.includes('://') ? rawHost : `https://${rawHost}`;
+let hostUrl;
+try {
+  hostUrl = new URL(normalizedHost);
+} catch (error) {
+  throw new Error(`Invalid N8N_HOST URL: ${rawHost}`);
+}
+const host = hostUrl.origin.replace(/\/$/, '');
+const hostName = hostUrl.hostname;
 const workflowId = getEnv('WORKFLOW_ID', { required: true });
 const apiKey = getEnv('N8N_API_KEY');
 const n8nJwt = getEnv('N8N_JWT');
@@ -98,11 +107,18 @@ function buildCurlEnv() {
 }
 
 const curlExtraArgs = parseCurlExtraArgs(getEnv('N8N_CURL_EXTRA_ARGS'));
+const curlNoProxy =
+  getEnv('N8N_CURL_NO_PROXY') || getEnv('NO_PROXY') || getEnv('no_proxy') || hostName;
 const curlEnv = buildCurlEnv();
 
 async function curlJsonRequest(pathname, { method = 'GET', body } = {}) {
   const url = `${apiBase}${pathname}`;
-  const args = ['-sS', '-o', '-', '-w', '\n%{http_code}', '-X', method, ...curlExtraArgs];
+  const args = ['-sS', '-o', '-', '-w', '\n%{http_code}', '-X', method];
+  const hasNoProxyArg = curlExtraArgs.some((arg) => arg === '--noproxy' || arg.startsWith('--noproxy='));
+  if (!hasNoProxyArg && curlNoProxy) {
+    args.push('--noproxy', curlNoProxy);
+  }
+  args.push(...curlExtraArgs);
   const headers = {
     'Content-Type': 'application/json',
   };
