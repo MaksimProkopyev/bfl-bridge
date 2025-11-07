@@ -1,2 +1,4 @@
 node_modules/
 .env.local
+diag.log
+diag_report.json
