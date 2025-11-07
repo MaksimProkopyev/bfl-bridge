@@ -23,7 +23,17 @@ hr(){ printf '\n%s\n' "---------------------------------------------------------
 curl_np(){  # curl с обходом прокси к нужному хосту
   local url="$1"; shift
   local host="$(echo "$url" | sed -E 's#^https?://([^/]+)/?.*#\1#')"
-  curl --noproxy "$host" "$@"
+  local needs_url="yes"
+  for arg in "$@"; do
+    case "$arg" in
+      http://*|https://*) needs_url="no"; break ;;
+    esac
+  done
+  if [[ "$needs_url" == "yes" ]]; then
+    curl --noproxy "$host" "$@" "$url"
+  else
+    curl --noproxy "$host" "$@"
+  fi
 }
 
 auth_args=()
