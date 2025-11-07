@@ -114,6 +114,11 @@ const curlEnv = buildCurlEnv();
 async function curlJsonRequest(pathname, { method = 'GET', body } = {}) {
   const url = `${apiBase}${pathname}`;
   const args = ['-sS', '-o', '-', '-w', '\n%{http_code}', '-X', method];
+  const hasIpv4Arg =
+    curlExtraArgs.some((arg) => arg === '--ipv4') || args.includes('--ipv4');
+  if (!hasIpv4Arg) {
+    args.unshift('--ipv4');
+  }
   const hasNoProxyArg = curlExtraArgs.some((arg) => arg === '--noproxy' || arg.startsWith('--noproxy='));
   if (!hasNoProxyArg && curlNoProxy) {
     args.push('--noproxy', curlNoProxy);
