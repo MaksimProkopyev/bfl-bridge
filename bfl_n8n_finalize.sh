@@ -10,7 +10,7 @@ cd bfl-bridge && git fetch origin && gh pr checkout "$PR"
 
 # патч (идемпотентно)
 if ! grep -q 'value3 // ""' "$FILE"; then
-  perl -0777 -pe 's#// \\"\")"))#// "")"))#g' -i "$FILE"
+  perl -0pi -e 's#\Q// \\"\")"))\E#// "")"))#g' "$FILE"
   grep -q 'value3 // ""' "$FILE" || { echo "PATCH_NOT_APPLIED"; exit 3; }
   git add "$FILE"; git commit -m "fix(jq): empty-fallback quotes" || true; git push
 fi
