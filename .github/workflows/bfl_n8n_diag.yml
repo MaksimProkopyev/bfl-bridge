@@ -99,7 +99,7 @@ jobs:
               | (((.parameters.options // {} ) as $o
                   | [$o.headers, $o.headerParametersUi, .parameters.headerParametersUi]
                   | map(try .parameters // .) | flatten
-                  | map(select(.name? != null) | "\(.name)=\(.value // .value2 // .value3 // \"")")) // []) as $h
+                  | map(select(.name? != null) | "\(.name)=\(.value // .value2 // .value3 // \"\")")) // []) as $h
               | if ($h | map(test("^Authorization=.*OPENAI_API_KEY")) | any) then "present"
                 elif ($h | map(test("^Authorization=.*")) | any) then "missing" else "absent" end' <<<"$WF_JSON" | head -n1
           )"
