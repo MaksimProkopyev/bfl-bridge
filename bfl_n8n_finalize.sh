@@ -10,7 +10,17 @@ cd bfl-bridge && git fetch origin && gh pr checkout "$PR"
 
 # патч (идемпотентно)
 if ! grep -q 'value3 // ""' "$FILE"; then
-  perl -0pi -e 's#\Q// \\"\")"))\E#// "")"))#g' "$FILE"
+  python3 - "$FILE" <<'PY'
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+old = ' // \\"\")"))'
+new = ' // "")"))'
+text = path.read_text()
+if old not in text:
+    raise SystemExit("PATCH_NOT_APPLIED: literal not found")
+path.write_text(text.replace(old, new, 1))
+PY
   grep -q 'value3 // ""' "$FILE" || { echo "PATCH_NOT_APPLIED"; exit 3; }
   git add "$FILE"; git commit -m "fix(jq): empty-fallback quotes" || true; git push
 fi
