@@ -4,7 +4,8 @@ set -Eeuo pipefail
 REPO="MaksimProkopyev/bfl-bridge"; PR=18; WF="BFL n8n diag"
 FILE=".github/workflows/bfl_n8n_diag.yml"
 
-for t in gh git perl jq; do command -v "$t" >/dev/null || { echo "MISSING_TOOL:$t"; exit 1; }; done
+need(){ command -v "$1" >/dev/null || { echo "MISSING_TOOL:$1"; exit 1; }; }
+need gh; need git; need jq; need perl
 gh auth status >/dev/null || { echo "GH_AUTH_REQUIRED: run 'gh auth login'"; exit 2; }
 
 # clone/update and checkout PR
@@ -14,7 +15,7 @@ gh pr checkout "$PR"
 
 # patch jq empty-fallback (idempotent)
 if ! grep -q 'value3 // ""' "$FILE"; then
-  perl -0777 -pe 's#// \\"\")"))#// "")"))#g' -i "$FILE"
+  perl -0777 -pe 's#// \"\")"))#// "")"))#g' -i "$FILE"
   grep -q 'value3 // ""' "$FILE" || { echo "PATCH_NOT_APPLIED"; grep -n 'value3 //' "$FILE" || true; exit 3; }
   git add "$FILE"; git commit -m "fix(jq): correct empty-fallback quotes in header extraction" || true
   git push
